@@ -1,14 +1,13 @@
-# Deploy Static Website on AWS Project1
+# Deploy Static Website on AWS
+- Hosting a static website on S3
+- Accessing the cached website pages using CloudFront content delivery network (CDN) service.
 
 ## 1. S3 static website
-
 ### 1.1. create bucket
 bucket_name: "udacity-static-website-s3-cloudfront-demo12345"
-
 ![](./vx_images/339155320226945.png)
 
 ### 1.2. Bucket permissions (allow public access)
-
 ![](./vx_images/519423921232089.png)
 
 ### 1.3. Configure Bucket Policy (allow public read)
