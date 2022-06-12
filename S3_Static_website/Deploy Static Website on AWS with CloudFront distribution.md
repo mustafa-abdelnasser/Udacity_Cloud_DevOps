@@ -2,6 +2,9 @@
 - Hosting a static website on S3
 - Accessing the cached website pages using CloudFront content delivery network (CDN) service.
 
+Note:
+we use our created static website hosting endpoint as cloudFront distribution origin not S3 bucket, this means S3 bucket must be with public access enabled and read objects allowed to anyone.
+
 ## 1. S3 static website
 ### 1.1. create bucket
 bucket_name: "udacity-static-website-s3-cloudfront-demo12345"
