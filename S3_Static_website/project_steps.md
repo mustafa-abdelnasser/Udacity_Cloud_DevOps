@@ -5,11 +5,11 @@
 ### 1.1. create bucket
 bucket_name: "udacity-static-website-s3-cloudfront-demo12345"
 
-![](vx_images/339155320226945.png =742x)
+![](./vx_images/339155320226945.png =742x)
 
 ### 1.2. Bucket permissions (allow public access)
 
-![](vx_images/519423921232089.png =742x)
+![](./vx_images/519423921232089.png =742x)
 
 ### 1.3. Configure Bucket Policy (allow public read)
 
