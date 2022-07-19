@@ -1,0 +1,320 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Udacity CloudFormation Project to create HA application
+
+Parameters:
+  EnvironmentName:
+    Description: Project Name to be used in names and resources tags
+    Type: String
+  Ec2AmiUbuntu18:
+    Description: Ubuntu Canonical, Ubuntu, 18.04 LTS, amd64 bionic image build on 2022-06-10
+    Type: AWS::EC2::Image::Id
+  Ec2InstanceType:
+    Description: 2vCPU 4GB or RAM
+    Type: String
+    Default: t2.medium
+  S3BucketName:
+    Description: S3 Bucket Name contain webstie home page
+    Type: String
+  AlbAccessLogsBucketName:
+    Description: S3 Bucket Name contain webstie home page
+    Type: String
+
+Mappings:
+  ElbRegionAccountId:
+    us-east-1:
+      "ElbAccountId" : "127311923021"
+
+Resources:
+# create a new keypair for webservers and save it to  AWS Systems Manager Parameter Store
+  ProjectWebServerKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties: 
+      KeyName: !Sub ${EnvironmentName}-WebServer-Key
+      KeyType: rsa
+      Tags: 
+        - Key: project
+          Value: !Ref EnvironmentName
+
+# Private Web servers security groups  
+  ProjectWebServerSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-WebServer-SecGroup
+      GroupDescription: allow all incoming traffic on port 80
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        SourceSecurityGroupId: 
+          Fn::ImportValue: !Sub ${EnvironmentName}-BastionSecurityGroupId
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        SourceSecurityGroupId: !Ref ProjectAlbSecGroup
+      VpcId: 
+        Fn::ImportValue: !Sub ${EnvironmentName}-VpcId
+      Tags:
+        - Key: project
+          Value: !Ref EnvironmentName
+
+# Allow Web Servers to read S3 resources
+  ProjectWebServerS3GetObjectRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: "EC2 Assume role"
+      RoleName: !Sub ${EnvironmentName}-Ec2S3GetObjectRole
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+  
+  ProjectWebServerS3GetObjectPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${EnvironmentName}-Ec2S3GetObjectPolicy
+      Roles:
+        - !Ref ProjectWebServerS3GetObjectRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          Resource: !Sub arn:aws:s3:::${S3BucketName}/*
+
+  ProjectWebServerIamInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref ProjectWebServerS3GetObjectRole
+
+# create Launch Configuration
+  ProjectWebServerlaunchConfig: 
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      LaunchConfigurationName: !Sub ${EnvironmentName}-LaunchConfigurationv2
+      AssociatePublicIpAddress: false
+      IamInstanceProfile: !Ref ProjectWebServerIamInstanceProfile
+      ImageId: !Ref Ec2AmiUbuntu18
+      InstanceMonitoring: false
+      InstanceType: !Ref Ec2InstanceType
+      KeyName: !Ref ProjectWebServerKeyPair
+      SecurityGroups:
+        - !Ref ProjectWebServerSecGroup
+      BlockDeviceMappings: 
+        - DeviceName: /dev/xvda
+          Ebs: 
+            VolumeSize: 10
+            VolumeType: gp2
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt-get update -y
+          apt-get install unzip -y
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+          apt-get install apache2 -y
+          systemctl start apache2.service
+          aws s3 cp s3://${S3BucketName}/index.html /var/www/html/index.html
+          echo "\n" >> /var/www/html/index.html
+          echo "source webserver: $(hostname)" >> /var/www/html/index.html
+
+# create AutoScaling Group
+  ProjectWebServerAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${EnvironmentName}-AutoScalingGroup
+      LaunchConfigurationName: !Ref ProjectWebServerlaunchConfig
+      VPCZoneIdentifier:
+      - Fn::ImportValue: !Sub ${EnvironmentName}-PrivateSubnets
+      MaxSize: 6
+      DesiredCapacity: 4
+      DesiredCapacityType: units
+      MinSize: 2
+      HealthCheckGracePeriod: 120
+      HealthCheckType: ELB
+      TargetGroupARNs: 
+        - !Ref ProjectAlbTargetGroup
+      Tags:
+        - Key: project
+          PropagateAtLaunch: true
+          Value: !Ref EnvironmentName
+
+# ALB Security Group
+  ProjectAlbSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-Alb-SecGroup
+      GroupDescription: allow all incoming traffic on port 80
+      VpcId: 
+        Fn::ImportValue: !Sub ${EnvironmentName}-VpcId
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: project
+          Value: !Ref EnvironmentName
+
+# ALB Target group
+  ProjectAlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties: 
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 6
+      IpAddressType: ipv4
+      Name: !Sub ${EnvironmentName}-Alb-TG
+      Port: 80
+      Protocol: HTTP
+      Tags:
+        - Key: project
+          Value: !Ref EnvironmentName
+      TargetGroupAttributes: 
+        - Key: load_balancing.algorithm.type
+          Value: round_robin
+      VpcId: 
+        Fn::ImportValue: !Sub ${EnvironmentName}-VpcId
+        
+# ALB Listener
+  ProjectAlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      DefaultActions: 
+        - Type: forward
+          TargetGroupArn: !Ref ProjectAlbTargetGroup
+      LoadBalancerArn: !Ref ProjectAlb
+      Port: 80
+      Protocol: HTTP
+
+# ALB Listener Rule
+  ProjectAlbListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties: 
+      Actions: 
+        - Type: forward
+          TargetGroupArn: !Ref ProjectAlbTargetGroup
+      Conditions: 
+        - Field: path-pattern
+          Values: [/]
+      ListenerArn: !Ref ProjectAlbListener
+      Priority: 1
+
+# ALB Access Log Bucket
+  ProjectAlbAccessLogss3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: Private
+      BucketName: !Ref AlbAccessLogsBucketName
+      Tags: 
+        - Key: project
+          Value: !Ref EnvironmentName
+
+  ProjectAlbAccessLogss3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProjectAlbAccessLogss3Bucket
+      PolicyDocument:
+        Statement:
+          - Action: 
+              - 's3:PutObject'
+            Effect: Allow
+            Resource:
+              - !Join
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref ProjectAlbAccessLogss3Bucket
+                  - /ALB-Access-Logs/AWSLogs/
+                  - !Sub ${AWS::AccountId}
+                  - /*
+            Principal:
+              AWS:
+                - !Join
+                  - ''
+                  - - 'arn:aws:iam::'
+                    - !FindInMap [ ElbRegionAccountId, !Ref "AWS::Region", ElbAccountId]
+                    - ':root'
+          - Action: 
+              - "s3:GetBucketAcl"
+            Effect: Allow
+            Resource:
+              - !Join
+                  - ''
+                  - - 'arn:aws:s3:::'
+                    - !Ref ProjectAlbAccessLogss3Bucket
+            Principal:
+              Service: delivery.logs.amazonaws.com
+          - Action: "s3:PutObject"
+            Effect: Allow
+            Resource:
+              - !Join
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref ProjectAlbAccessLogss3Bucket
+                  - /ALB-Access-Logs/AWSLogs/
+                  - !Sub ${AWS::AccountId}
+                  - /*
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Condition:
+              StringEquals:
+                "s3:x-amz-acl": "bucket-owner-full-control"
+
+# ALB
+  ProjectAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: ProjectAlbAccessLogss3BucketPolicy
+    Properties: 
+      IpAddressType: ipv4
+      LoadBalancerAttributes: 
+        - Key: access_logs.s3.enabled
+          Value: true
+        - Key: access_logs.s3.bucket
+          Value: !Ref AlbAccessLogsBucketName
+        - Key: access_logs.s3.prefix
+          Value: ALB-Access-Logs
+      Name: !Sub ${EnvironmentName}-Alb
+      SecurityGroups: 
+        - !Ref ProjectAlbSecGroup
+      Subnets: 
+        Fn::Split: ["," , Fn::ImportValue: !Sub '${EnvironmentName}-PublicSubnets']
+      Tags: 
+        - Key: project
+          Value: !Ref EnvironmentName
+      Type: application
+
+
+Outputs:
+  ProjectWebServerKeyPair:
+    Description: Created Web Server KeyPair
+    Value: !GetAtt ProjectWebServerKeyPair.KeyPairId
+    Export:
+      Name: !Sub ${EnvironmentName}-WebServerkeyPairId
+  ProjectAlbUrl:
+    Description: load balancer public url
+    Value: 
+      Fn::Join:
+      - ''
+      - - "http://"
+        - !GetAtt ProjectAlb.DNSName
+    Export:
+      Name: !Sub ${EnvironmentName}-Alb-Url
+

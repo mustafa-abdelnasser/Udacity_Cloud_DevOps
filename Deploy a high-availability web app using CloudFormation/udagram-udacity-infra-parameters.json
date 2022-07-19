@@ -1,0 +1,38 @@
+[
+    {
+        "ParameterKey": "EnvironmentName",
+        "ParameterValue": "UdagramUdacityProject"
+    },
+    {
+        "ParameterKey": "VpcCidrBlock",
+        "ParameterValue": "10.0.0.0/16"
+    },
+    {
+        "ParameterKey": "VpcPublicSubnet1",
+        "ParameterValue": "10.0.1.0/24"
+    },
+    {
+        "ParameterKey": "VpcPublicSubnet2",
+        "ParameterValue": "10.0.2.0/24"
+    },
+    {
+        "ParameterKey": "VpcPrivateSubnet1",
+        "ParameterValue": "10.0.101.0/24"
+    },
+    {
+        "ParameterKey": "VpcPrivateSubnet2",
+        "ParameterValue": "10.0.102.0/24"
+    },
+    {
+        "ParameterKey": "Ec2BastionAmi",
+        "ParameterValue": "ami-0cff7528ff583bf9a"
+    },
+    {
+        "ParameterKey": "Ec2BastionsshPort",
+        "ParameterValue": "443"
+    },
+    {
+        "ParameterKey": "Ec2BastionsshCidr",
+        "ParameterValue": "156.213.73.56/32"
+    }
+]

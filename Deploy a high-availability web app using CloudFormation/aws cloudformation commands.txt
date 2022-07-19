@@ -1,0 +1,16 @@
+# infra template
+aws cloudformation validate-template --template-body file://udagram-udacity-infra.yaml
+aws cloudformation create-stack --stack-name uda-infra --region us-east-1 --capabilities CAPABILITY_NAMED_IAM --template-body file://udagram-udacity-infra.yaml --parameters file://udagram-udacity-infra-parameters.json 
+aws cloudformation update-stack --stack-name uda-infra --region us-east-1 --capabilities CAPABILITY_NAMED_IAM --template-body file://udagram-udacity-infra.yaml --parameters file://udagram-udacity-infra-parameters.json
+aws ssm get-parameter --name "/ec2/keypair/key_Id" --region us-east-1 --with-decryption
+
+# app template
+## create s3 buckt
+aws s3 mb s3://s3websitecontenettest12aq12443333
+## upload app code to S3
+aws s3 cp ..\index.html s3://s3websitecontenettest12aq12443333
+
+## validate and create uda-app stack
+aws cloudformation validate-template --template-body file://udagram-udacity-app.yaml
+aws cloudformation create-stack --stack-name uda-app --region us-east-1 --capabilities CAPABILITY_NAMED_IAM --template-body file://udagram-udacity-app.yaml --parameters file://udagram-udacity-app-parameters.json
+aws cloudformation update-stack --stack-name uda-app --region us-east-1 --capabilities CAPABILITY_NAMED_IAM --template-body file://udagram-udacity-app.yaml --parameters file://udagram-udacity-app-parameters.json

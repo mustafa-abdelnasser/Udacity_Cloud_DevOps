@@ -1,0 +1,393 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Udacity CloudFormation Project to create Network of HA application
+
+Parameters:
+  EnvironmentName:
+    Description: Project Name to be used in names and resources tags
+    Type: String
+
+  VpcCidrBlock:
+    Description:  VPC CIDR Block
+    Type: String
+
+  VpcPublicSubnet1:
+    Description: VPC Public Subnet1
+    Type: String
+    Default: 10.0.0.0/24
+
+  VpcPublicSubnet2:
+    Description: VPC Public Subnet2
+    Type: String
+    Default: 10.0.1.0/24
+
+  VpcPrivateSubnet1:
+    Description: VPC Private Subnet1
+    Type: String
+    Default: 10.0.2.0/24
+
+  VpcPrivateSubnet2:
+    Description: VPC Private Subnet1
+    Type: String
+    Default: 10.0.3.0/24
+
+  Ec2BastionAmi:
+    Description: Amazon Linux 2 Kernel 5.10 AMI 2.0.20220606.1 x86_64 HVM gp2
+    Type: AWS::EC2::Image::Id
+  
+  Ec2BastionsshPort:
+    Description: SSH port for Bastion Host
+    Type: String
+  
+  Ec2BastionsshCidr:
+    Description: Allowed Source of SSH to Bastion host
+    Type: String
+
+Resources:
+# VPC Networking
+  ProjectVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidrBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-VPC
+        - Key: project
+          Value: !Ref EnvironmentName
+
+## Internet Gw and Attachement to VPC
+  ProjectInternetGw:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-InternetGW
+        - Key: project
+          Value: !Ref EnvironmentName
+  
+  AttachInternetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref ProjectVpc
+      InternetGatewayId: !Ref ProjectInternetGw
+
+## Two Public Subnets
+  ProjectPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      VpcId: !Ref ProjectVpc
+      CidrBlock: !Ref VpcPublicSubnet1
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-public-subnet1
+        - Key: project
+          Value: !Ref EnvironmentName
+  
+  ProjectPublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      VpcId: !Ref ProjectVpc
+      CidrBlock: !Ref VpcPublicSubnet2
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-public-subnet2
+        - Key: project
+          Value: !Ref EnvironmentName
+
+## Public Route Table
+  ProjectPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ProjectVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-VPC-Public-RouteTable
+        - Key: project
+          Value: !Ref EnvironmentName
+
+  ProjectPublicRouteToInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref ProjectPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref ProjectInternetGw
+
+  ProjectPublicRouteTablePublicSubnet1Associate:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ProjectPublicSubnet1
+      RouteTableId: !Ref ProjectPublicRouteTable
+
+  ProjectPublicRouteTablePublicSubnet2Associate:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ProjectPublicSubnet2
+      RouteTableId: !Ref ProjectPublicRouteTable
+
+## Two NatGateway one per Public Subnet per AZ
+  ProjectNatGw1EIP:
+    DependsOn: AttachInternetGateway
+    Type: AWS::EC2::EIP
+    Properties:
+        Domain: vpc
+  ProjectNatGw1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+        AllocationId: !GetAtt ProjectNatGw1EIP.AllocationId
+        SubnetId: !Ref ProjectPublicSubnet1
+        Tags:
+          - Key: Name
+            Value: !Sub ${EnvironmentName}-NatGw1
+          - Key: project
+            Value: !Ref EnvironmentName
+
+  ProjectNatGw2EIP:
+    DependsOn: AttachInternetGateway
+    Type: AWS::EC2::EIP
+    Properties:
+        Domain: vpc
+  ProjectNatGw2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+        AllocationId: !GetAtt ProjectNatGw2EIP.AllocationId
+        SubnetId: !Ref ProjectPublicSubnet2
+        Tags:
+          - Key: Name
+            Value: !Sub ${EnvironmentName}-NatGw2
+          - Key: project
+            Value: !Ref EnvironmentName
+
+
+## Two Private Subnets with route tables to NatGw
+  ProjectPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      VpcId: !Ref ProjectVpc
+      CidrBlock: !Ref VpcPrivateSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-private-subnet1
+        - Key: project
+          Value: !Ref EnvironmentName
+  
+  ProjectPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      VpcId: !Ref ProjectVpc
+      CidrBlock: !Ref VpcPrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-private-subnet2
+        - Key: project
+          Value: !Ref EnvironmentName
+
+## Private Route Table
+  ProjectPrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ProjectVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-VPC-Private-RouteTable1
+        - Key: project
+          Value: !Ref EnvironmentName
+
+  ProjectPrivateRouteToNatGw1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref ProjectPrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref ProjectNatGw1
+
+  ProjectPrivateRouteTablePrivateSubnet1Associate:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ProjectPrivateSubnet1
+      RouteTableId: !Ref ProjectPrivateRouteTable1
+
+  ProjectPrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ProjectVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}VPC-Private-RouteTable2
+        - Key: project
+          Value: !Ref EnvironmentName
+
+  ProjectPrivateRouteToNatGw2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref ProjectPrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref ProjectNatGw2
+
+  ProjectPrivateRouteTablePrivateSubnet2Associate:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ProjectPrivateSubnet2
+      RouteTableId: !Ref ProjectPrivateRouteTable2
+
+# Create Bastion Host for this VPC
+## create Bastion keypair and save it in SSM parameter store
+  ProjectVpcBationKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties: 
+      KeyName: !Sub ${EnvironmentName}-VPC-Bastion-Key
+      KeyType: rsa
+      Tags: 
+        - Key: project
+          Value: !Ref EnvironmentName
+
+## security group
+  ProjectVpcBastionSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-Bastion-SecGroup1
+      GroupDescription: allow ssh on specific port
+      VpcId: !Ref ProjectVpc
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: !Ref Ec2BastionsshPort
+        ToPort: !Ref Ec2BastionsshPort
+        CidrIp: !Ref Ec2BastionsshCidr
+      Tags:
+        - Key: project
+          Value: !Ref EnvironmentName
+
+## Enable Bastion Host to access SSM Parameter Store
+  ProjectBastionSsmParameterReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: "EC2 Assume role"
+      RoleName: !Sub ${EnvironmentName}-Ec2SsmParameterRead
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+  
+  ProjectBastionSsmParameterReadPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${EnvironmentName}-Ec2SsmParameterReadPolicy
+      Roles:
+        - !Ref ProjectBastionSsmParameterReadRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          Resource:
+            Fn::Join:
+            - ':'
+            - - "arn:aws:ssm"
+              - !Sub ${AWS::Region}
+              - !Sub ${AWS::AccountId}
+              - "parameter/*"
+
+  ProjectBastionIamInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref ProjectBastionSsmParameterReadRole
+## Bastion EC2
+  myEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref ProjectVpcBationKeyPair
+      ImageId: !Ref Ec2BastionAmi
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref ProjectBastionIamInstanceProfile
+      Monitoring: false
+      SubnetId: !Ref ProjectPublicSubnet1
+      SecurityGroupIds:
+        - !Ref ProjectVpcBastionSecGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          sed -i 's/^#Port 22$/Port ${Ec2BastionsshPort}/' /etc/ssh/sshd_config
+          service sshd restart
+      BlockDeviceMappings: 
+        - DeviceName: /dev/xvda
+          Ebs: 
+            VolumeSize: 10
+            VolumeType: gp2
+            DeleteOnTermination: 'false'
+      Tags:
+        - Key: project
+          Value: !Ref EnvironmentName
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Vpc-Bastion-Host
+
+
+Outputs:
+  ProjectVpc:
+    Description: Created VPC
+    Value: !Ref ProjectVpc
+    Export:
+      Name: !Sub ${EnvironmentName}-VpcId
+
+  ProjectPublicSubnets:
+    Description: Created Public Subnet list
+    Value: !Join [ ",", [ !Ref ProjectPublicSubnet1, !Ref ProjectPublicSubnet2 ]]
+    Export:
+      Name: !Sub ${EnvironmentName}-PublicSubnets
+  
+  ProjectPublicSubnet1:
+    Description: Created Public Subnet1
+    Value: !Ref ProjectPublicSubnet1
+    Export:
+      Name: !Sub ${EnvironmentName}-PublicSubnet1
+
+  ProjectPublicSubnet2:
+    Description: Created Public Subnet2
+    Value: !Ref ProjectPublicSubnet2
+    Export:
+      Name: !Sub ${EnvironmentName}-PublicSubnet2
+
+  ProjectPrivateSubnets:
+    Description: Created Public Subnet list
+    Value: !Join [ ",", [ !Ref ProjectPrivateSubnet1, !Ref ProjectPrivateSubnet2 ]]
+    Export:
+      Name: !Sub ${EnvironmentName}-PrivateSubnets
+
+  ProjectPrivateSubnet1:
+    Description: Created Private Subnet1
+    Value: !Ref ProjectPrivateSubnet1
+    Export:
+      Name: !Sub ${EnvironmentName}-PrivateSubnet1
+
+  ProjectPrivateSubnet2:
+    Description: Created Private Subnet2
+    Value: !Ref ProjectPrivateSubnet2
+    Export:
+      Name: !Sub ${EnvironmentName}-PrivateSubnet2
+
+  ProjectBasionKeyPair:
+    Description: Created Basion KeyPair
+    Value: !GetAtt ProjectVpcBationKeyPair.KeyPairId
+    Export:
+      Name: !Sub ${EnvironmentName}-BastionkeyPair
+
+  ProjectBasionsecurityGroup:
+    Description: Created Basion Security Group ID
+    Value: !GetAtt ProjectVpcBastionSecGroup.GroupId
+    Export:
+      Name: !Sub ${EnvironmentName}-BastionSecurityGroupId
+

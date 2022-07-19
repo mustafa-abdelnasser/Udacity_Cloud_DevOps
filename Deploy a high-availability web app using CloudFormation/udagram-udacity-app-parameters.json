@@ -1,0 +1,22 @@
+[
+    {
+        "ParameterKey": "EnvironmentName",
+        "ParameterValue": "UdagramUdacityProject"
+    },
+    {
+        "ParameterKey": "Ec2AmiUbuntu18",
+        "ParameterValue": "ami-0729e439b6769d6ab"
+    },
+    {
+        "ParameterKey": "Ec2InstanceType",
+        "ParameterValue": "t2.medium"
+    },
+    {
+        "ParameterKey": "S3BucketName",
+        "ParameterValue": "s3websitecontenettest12aq12443333"
+    },
+    {
+        "ParameterKey": "AlbAccessLogsBucketName",
+        "ParameterValue": "alb-access-logs-udacity-project-2122345"
+    }
+]
