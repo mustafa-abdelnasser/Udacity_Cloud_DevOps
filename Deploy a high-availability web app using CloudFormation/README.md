@@ -10,7 +10,7 @@ Using CLoudFormation Templates and Parameters to create highly available web app
 ![image](https://user-images.githubusercontent.com/6891966/179841997-af683afb-9761-4e70-8a3d-80f14b0af67e.png)
 
 ## Templates
-### Udagram-udacity-infra.yaml with Udagram-udacity-infra-parameters.json
+### udagram-udacity-infra.yaml with Udagram-udacity-infra-parameters.json
 to create the required Infrastructure
 - custom VPC with private subnets, public subnets, route tables
 - Internet Gateway
@@ -23,7 +23,7 @@ to create the required Infrastructure
 - Export Stack outputs to be used by other templates
 
 
-### Udagram-udacity-app.yaml with Udagram-udacity-app-parameters.json
+### udagram-udacity-app.yaml with Udagram-udacity-app-parameters.json
 - Use the Exported outputs from infra template.
 - Autoscaling group with ELB health checks to create webservers on different private subnets cross multiple AZs.
 - Launch configuration with userdata and IamInstanceProfile to download the application from S3 bucket with needed GetObject IAM Policies and Roles.
